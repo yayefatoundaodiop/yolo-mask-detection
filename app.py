@@ -1,14 +1,24 @@
-import gradio as gr
+import streamlit as st
 from ultralytics import YOLO
 from PIL import Image
 import numpy as np
 
+# Configuration de la page
+st.set_page_config(
+    page_title="Détection de Masques",
+    page_icon="🎭",
+    layout="wide"
+)
+
 # ============================================================
 # CHARGER LE MODÈLE
 # ============================================================
-print("🔄 Chargement du modèle...")
-model = YOLO('mask_detection_model.pt')
-print("✅ Modèle chargé avec succès !")
+@st.cache_resource
+def load_model():
+    model = YOLO('mask_detection_model.pt')
+    return model
+
+model = load_model()
 
 # Classes
 CLASSES = {
@@ -18,186 +28,97 @@ CLASSES = {
 }
 
 # ============================================================
-# FONCTION DE DÉTECTION
+# INTERFACE
 # ============================================================
-def detect_masks(image):
-    """
-    Détecte les masques sur une image
-    
-    Args:
-        image: Image PIL ou numpy array
-    
-    Returns:
-        Image annotée avec les détections
-    """
-    if image is None:
-        return None
-    
-    # Prédiction
-    results = model.predict(
-        source=image,
-        conf=0.25,  # Seuil de confiance
-        iou=0.45,   # Seuil IOU pour NMS
-        verbose=False
-    )
-    
-    # Image annotée
-    annotated_image = results[0].plot()
-    
-    # Statistiques
-    detections = results[0].boxes
-    num_detections = len(detections)
-    
-    # Compter par classe
-    stats = {
-        "😷 Avec Masque": 0,
-        "😊 Sans Masque": 0,
-        "⚠️ Masque Mal Porté": 0
-    }
-    
-    if num_detections > 0:
-        for box in detections:
-            class_id = int(box.cls[0])
-            stats[CLASSES[class_id]] += 1
-    
-    # Texte de résumé
-    summary = f"""
-    📊 **Résultats de la détection :**
-    
-    - Personnes détectées : **{num_detections}**
-    - {stats['😷 Avec Masque']} avec masque
-    - {stats['😊 Sans Masque']} sans masque  
-    - {stats['⚠️ Masque Mal Porté']} avec masque mal porté
-    """
-    
-    return annotated_image, summary
+st.title("🎭 Détection de Masques Faciaux")
+st.markdown("Uploadez une image pour détecter automatiquement le port du masque avec YOLO v8")
 
-# ============================================================
-# INTERFACE GRADIO
-# ============================================================
-
-# CSS personnalisé
-custom_css = """
-#title {
-    text-align: center;
-    font-size: 2.5em;
-    font-weight: bold;
-    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin-bottom: 10px;
-}
-
-#description {
-    text-align: center;
-    font-size: 1.1em;
-    color: #666;
-    margin-bottom: 20px;
-}
-
-.gradio-container {
-    max-width: 1200px;
-    margin: auto;
-}
-"""
-
-# Exemples d'images (vous pouvez ajouter vos propres URLs)
-examples = [
-    # Ajoutez ici des chemins vers des images d'exemple
-]
-
-# Interface
-with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
+# Sidebar
+with st.sidebar:
+    st.header("⚙️ Paramètres")
+    confidence = st.slider("Seuil de confiance", 0.0, 1.0, 0.25, 0.05)
     
-    gr.HTML("<h1 id='title'>🎭 Détection de Masques Faciaux</h1>")
-    gr.HTML("<p id='description'>Uploadez une image pour détecter automatiquement le port du masque avec YOLO v8</p>")
-    
-    with gr.Row():
-        with gr.Column(scale=1):
-            # Input
-            input_image = gr.Image(
-                label="📸 Image d'entrée",
-                type="pil",
-                height=400
-            )
-            
-            # Boutons
-            with gr.Row():
-                submit_btn = gr.Button("🔍 Analyser", variant="primary", size="lg")
-                clear_btn = gr.ClearButton(components=[input_image], value="🔄 Effacer")
-        
-        with gr.Column(scale=1):
-            # Output
-            output_image = gr.Image(
-                label="✨ Résultat de la détection",
-                type="numpy",
-                height=400
-            )
-            
-            # Statistiques
-            output_text = gr.Markdown(label="📊 Statistiques")
-    
-    # Informations
-    with gr.Accordion("ℹ️ À propos", open=False):
-        gr.Markdown("""
-        ### 🎯 Comment ça marche ?
-        
-        1. **Uploadez** une image contenant une ou plusieurs personnes
-        2. Cliquez sur **"Analyser"**
-        3. Le modèle YOLO détecte automatiquement :
-           - ✅ Les personnes avec masque
-           - ❌ Les personnes sans masque
-           - ⚠️ Les masques mal portés
-        
-        ### 🤖 Technologie
-        
-        - **Modèle** : YOLOv8n (Ultralytics)
-        - **Entraînement** : Face Mask Detection Dataset
-        - **Classes** : with_mask, without_mask, mask_weared_incorrect
-        - **Framework** : Gradio + Hugging Face Spaces
-        
-        ### 📊 Performance
-        
-        - mAP@50 : ~0.75-0.85
-        - Temps d'inférence : <100ms par image
-        - Support : Images JPG, PNG
-        
-        ### 🔗 Liens utiles
-        
-        - [Code source sur GitHub](#)
-        - [Dataset sur Kaggle](https://www.kaggle.com/datasets/andrewmvd/face-mask-detection)
-        - [Documentation YOLO](https://docs.ultralytics.com)
-        """)
-    
-    # Exemples
-    if examples:
-        gr.Examples(
-            examples=examples,
-            inputs=input_image,
-            outputs=[output_image, output_text],
-            fn=detect_masks,
-            cache_examples=True
-        )
-    
-    # Event handlers
-    submit_btn.click(
-        fn=detect_masks,
-        inputs=input_image,
-        outputs=[output_image, output_text]
-    )
-    
-    # Footer
-    gr.HTML("""
-    <div style='text-align: center; margin-top: 20px; color: #666;'>
-        <p>Créé avec ❤️ par [Votre Nom] | Propulsé par Gradio & YOLOv8</p>
-    </div>
+    st.markdown("---")
+    st.markdown("### 🤖 À propos")
+    st.markdown("""
+    - **Modèle** : YOLOv8n
+    - **Dataset** : Face Mask Detection
+    - **Classes** : 3
     """)
 
-# ============================================================
-# LANCEMENT
-# ============================================================
-if __name__ == "__main__":
-    demo.launch(
-        share=False,  # Sur HF Spaces, pas besoin de share=True
-        show_error=True
-    )
+# Upload d'image
+uploaded_file = st.file_uploader(
+    "📸 Choisissez une image",
+    type=['jpg', 'jpeg', 'png']
+)
+
+if uploaded_file is not None:
+    # Afficher l'image originale
+    image = Image.open(uploaded_file)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Image originale")
+        st.image(image, use_container_width=True)
+    
+    # Bouton d'analyse
+    if st.button("🔍 Analyser", type="primary"):
+        with st.spinner("Analyse en cours..."):
+            # Prédiction
+            results = model.predict(
+                source=image,
+                conf=confidence,
+                iou=0.45,
+                verbose=False
+            )
+            
+            # Image annotée
+            annotated_image = results[0].plot()
+            
+            # Statistiques
+            detections = results[0].boxes
+            num_detections = len(detections)
+            
+            # Compter par classe
+            stats = {
+                "😷 Avec Masque": 0,
+                "😊 Sans Masque": 0,
+                "⚠️ Masque Mal Porté": 0
+            }
+            
+            if num_detections > 0:
+                for box in detections:
+                    class_id = int(box.cls[0])
+                    stats[CLASSES[class_id]] += 1
+            
+            # Afficher le résultat
+            with col2:
+                st.subheader("Résultat de la détection")
+                st.image(annotated_image, use_container_width=True)
+            
+            # Statistiques
+            st.markdown("---")
+            st.subheader("📊 Statistiques")
+            
+            metric_cols = st.columns(4)
+            with metric_cols[0]:
+                st.metric("Total détecté", num_detections)
+            with metric_cols[1]:
+                st.metric("Avec masque", stats["😷 Avec Masque"])
+            with metric_cols[2]:
+                st.metric("Sans masque", stats["😊 Sans Masque"])
+            with metric_cols[3]:
+                st.metric("Mal porté", stats["⚠️ Masque Mal Porté"])
+
+else:
+    st.info("👆 Uploadez une image pour commencer")
+
+# Footer
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: #666;'>"
+    "<p>Créé avec ❤️ | Propulsé par Streamlit & YOLOv8</p>"
+    "</div>",
+    unsafe_allow_html=True
+)
